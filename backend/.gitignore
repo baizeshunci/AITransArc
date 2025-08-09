@@ -1,0 +1,68 @@
+# ── uv 相关 ----------------------------------------------------------
+# uv 默认把虚拟环境放在项目根目录的 .venv
+.venv
+# 如果你显式把 venv 建在其他目录，也一起忽略
+# venv/
+# .env  # 如需提交模板可保留 .env.example
+.env
+
+# ── Python 通用 ------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.pytest_cache/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ── IDE / 编辑器 -----------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+
+# ── macOS / Windows / Linux -----------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── FastAPI / 应用运行时 ---------------------------------------------
+# 示例上传文件目录（如使用）
+uploads/
+# 日志
+*.log
+logs/
+
+# ── 其他 -----------------------------------------------------------
+# 本地 sqlite 数据库（如存在）
+*.db
+*.sqlite3
