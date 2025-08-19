@@ -38,7 +38,7 @@
             脉冲电流监测区
           </div>
           <div class="flex-1 p-1">
-            <PulseCurrentMultiAnalysisChart class="w-full h-full" />
+            <PulseCurrentMultiAnalysisChart :pulseTimeData="formattedPulseTimeData" class="w-full h-full" />
           </div>
         </div>
       </div>
@@ -72,7 +72,8 @@ import FaultType from "./components/fault_type.vue";
 import UltrasonicChartSwitcher from "./components/ultrasonic_chart_switcher.vue";
 import PulseCurrentMultiAnalysisChart from "./components/pulse_current_multi_analysis_chart.vue";
 import Stress_time from "./components/stress_time.vue";
-import { ref } from 'vue';
+import { ref , computed} from 'vue';
+import MockDataSource from './components/AI_test_data.js';
 
 // 故障类型列表
 const faultTypes = [
@@ -84,166 +85,49 @@ const faultTypes = [
   '未知类型'
 ];
 
-// 完整模拟数据源（含电弧放电压力数据）
-const mockDataSource = {
-  '正常状态': {
-    temperature: {
-      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
-      series: [
-        {
-          name: '环境温度',
-          data: [18.5, 17.2, 16.8, 19.5, 23.2, 25.6, 24.8, 22.0, 20.5],
-          color: '#4CAF50',
-          smooth: true
-        }
-      ]
-    },
-    pressure: {
-      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
-      series: [
-        {
-          name: '油中压力',
-          data: [0.12, 0.11, 0.10, 0.12, 0.13, 0.14, 0.13, 0.12, 0.11],
-          color: '#2196F3',
-          smooth: true
-        }
-      ]
-    }
-  },
-  '电弧放电': {
-    temperature: {
-      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
-      series: [
-        {
-          name: '环境温度',
-          data: [22.5, 24.2, 25.8, 27.5, 30.2, 32.6, 31.8, 29.0, 30.0],
-          color: '#FF5722',
-          smooth: true
-        }
-      ]
-    },
-    pressure: {
-      // 电弧放电压力特征：12:00左右发生放电，压力骤升后逐渐回落
-      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
-      series: [
-        {
-          name: '油中压力',
-          data: [0.13, 0.14, 0.15, 0.16, 0.85, 0.52, 0.38, 0.25, 0.18],
-          color: '#E91E63',
-          smooth: false // 电弧放电压力突变，关闭平滑效果
-        }
-      ]
-    }
-  },
-  '电晕放电': {
-    temperature: {
-      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
-      series: [
-        {
-          name: '环境温度',
-          data: [20.5, 21.2, 22.8, 23.5, 25.2, 26.6, 25.8, 24.0, 22.5],
-          color: '#FFC107',
-          smooth: true
-        }
-      ]
-    },
-    pressure: {
-      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
-      series: [
-        {
-          name: '油中压力',
-          data: [0.14, 0.15, 0.16, 0.17, 0.22, 0.25, 0.23, 0.20, 0.18],
-          color: '#9C27B0',
-          smooth: true
-        }
-      ]
-    }
-  },
-  '火花放电': {
-    temperature: {
-      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
-      series: [
-        {
-          name: '环境温度',
-          data: [19.8, 20.5, 21.3, 22.7, 24.1, 25.3, 24.5, 23.2, 24.1],
-          color: '#FF9800',
-          smooth: true
-        }
-      ]
-    },
-    pressure: {
-      // 火花放电压力特征：多次小幅脉冲
-      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
-      series: [
-        {
-          name: '油中压力',
-          data: [0.12, 0.13, 0.30, 0.15, 0.35, 0.18, 0.28, 0.16, 0.14],
-          color: '#673AB7',
-          smooth: false
-        }
-      ]
-    }
-  },
-  '内部故障': {
-    temperature: {
-      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
-      series: [
-        {
-          name: '环境温度',
-          data: [23.1, 24.8, 26.5, 28.2, 30.5, 32.1, 31.3, 29.7, 29.9],
-          color: '#F44336',
-          smooth: true
-        }
-      ]
-    },
-    pressure: {
-      // 内部故障压力特征：持续上升
-      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
-      series: [
-        {
-          name: '油中压力',
-          data: [0.15, 0.20, 0.28, 0.35, 0.42, 0.50, 0.58, 0.65, 0.72],
-          color: '#795548',
-          smooth: true
-        }
-      ]
-    }
-  },
-  '未知类型': {
-    temperature: {
-      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
-      series: [
-        {
-          name: '环境温度',
-          data: [17.6, 18.3, 19.1, 20.8, 22.5, 23.7, 22.9, 21.4, 17.6],
-          color: '#9E9E9E',
-          smooth: true
-        }
-      ]
-    },
-    pressure: {
-      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
-      series: [
-        {
-          name: '油中压力',
-          data: [0.13, 0.14, 0.16, 0.18, 0.25, 0.22, 0.19, 0.17, 0.15],
-          color: '#607D8B',
-          smooth: true
-        }
-      ]
-    }
-  }
-};
-
-// 响应式状态管理
 const currentSelected = ref('正常状态');
-const currentData = ref(mockDataSource[currentSelected.value]);
+// 计算属性自动同步，无需手动更新
+const currentData = computed(() => {
+  return MockDataSource[currentSelected.value] || {
+    temperature: { xAxis: [], series: [] },
+    pressure: { xAxis: [], series: [] },
+    pulse: { xAxis: [], series: [] }
+  };
+});
 
-// 类型切换处理函数
+// 新增：格式化脉冲数据为子组件需要的二维数组
+const formattedPulseTimeData = computed(() => {
+  // 从当前数据中获取脉冲原始数据
+  const pulse = currentData.value.pulse;
+  
+  // 防御性校验：确保原始数据格式正确
+  if (
+    !pulse || 
+    !Array.isArray(pulse.xAxis) || 
+    !pulse.series || 
+    pulse.series.length === 0 || 
+    !Array.isArray(pulse.series[0].data)
+  ) {
+    return []; // 格式错误时返回空数组
+  }
+  
+  // 转换为 [[时间(数字), 峰值], ...] 格式
+  return pulse.xAxis.map((timeStr, index) => [
+    parseFloat(timeStr), // 将时间字符串转为数字（如 "0.2" → 0.2）
+    // 取对应索引的峰值，若不存在则用 0 兜底
+    pulse.series[0].data[index] !== undefined ? pulse.series[0].data[index] : 0
+  ]);
+});
+
+// 切换函数只需更新选中状态即可
 function handleTypeChange(newType) {
-  currentSelected.value = newType;
-  currentData.value = mockDataSource[newType];
+  if (MockDataSource[newType]) {
+    currentSelected.value = newType;
+  } else {
+    console.warn(`不存在的状态类型：${newType}`);
+  }
 }
+
 </script>
 
 <style scoped>

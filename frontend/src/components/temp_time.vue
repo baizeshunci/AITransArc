@@ -19,6 +19,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
 import * as echarts from "echarts";
+import { useBaseChart } from "./js/base-chart";
 
 // 接收父组件传入的数据
 const props = defineProps({
@@ -37,38 +38,13 @@ const props = defineProps({
 
 // 引用DOM容器
 const target = ref(null);
-let eChart = null;
-let isRendering = false;
-let resizeObserver = null;
-
-// 记录上一次尺寸，避免重复弹窗
-let lastWidth = 0;
-let lastHeight = 0;
-
-// 尺寸变化时调整图表并弹窗
-const handleResize = () => {
-    if (eChart && target.value) {
-        // 获取实时尺寸
-        const currentWidth = Math.round(target.value.offsetWidth);
-        const currentHeight = Math.round(target.value.offsetHeight);
-        
-        // 尺寸变化时弹窗
-        if (currentWidth !== lastWidth || currentHeight !== lastHeight) {
-            alert(`图表尺寸已变化：\n宽=${currentWidth}px, 高=${currentHeight}px`);
-            lastWidth = currentWidth;
-            lastHeight = currentHeight;
-        }
-        
-        eChart.resize();
-    }
-};
 
 // 根据实时尺寸计算网格配置（增加内部空白）
 const getGridConfig = () => {
     if (!target.value) return {};
-    
+
     const { offsetWidth: width, offsetHeight: height } = target.value;
-    
+
     // 核心：增大网格边距（图表内容与边框的空白）
     const left = width < 300 ? '3%' : '2%'; // 左侧空白
     const right = width < 300 ? '6%' : '5%'; // 右侧空白
@@ -84,22 +60,12 @@ const getGridConfig = () => {
     };
 };
 
-// 渲染图表（精简版）
-const renderChart = async () => {
-    if (isRendering || !target.value) return;
-    isRendering = true;
 
-    try {
-        await nextTick();
-        
-        // 初始化或复用ECharts实例
-        if (!eChart) {
-            eChart = echarts.init(target.value);
-        }
-
-        // 基于实时尺寸设置图表配置
+useBaseChart({
+    target: target, // 图表容器的ref（已在组件中定义）
+    getOption: () => { // 生成当前图表的个性化配置
         const grid = getGridConfig();
-        const options = {
+        return {
             backgroundColor: 'transparent',
             tooltip: {
                 trigger: 'axis',
@@ -197,53 +163,10 @@ const renderChart = async () => {
                 }
             }))
         };
-
-        eChart.setOption(options, true);
-    } catch (error) {
-        console.error("图表渲染出错:", error);
-    } finally {
-        isRendering = false;
-    }
-};
-
-// 组件挂载时初始化监听
-onMounted(() => {
-    renderChart();
-    if (target.value) {
-        const observeElements = [target.value];
-        if (target.value.parentElement) {
-            observeElements.push(target.value.parentElement);
-        }
-        
-        resizeObserver = new ResizeObserver(entries => {
-            handleResize();
-        });
-        
-        observeElements.forEach(el => {
-            resizeObserver.observe(el, { box: 'border-box' });
-        });
-    }
+    },
+    watchSource: () => props.data // 监听数据变化
 });
 
-// 监听数据变化
-watch(() => props.data, () => {
-    renderChart();
-}, { deep: true });
-
-// 组件卸载时清理
-onUnmounted(() => {
-    if (eChart) {
-        eChart.dispose();
-        eChart = null;
-    }
-    if (resizeObserver && target.value) {
-        resizeObserver.unobserve(target.value);
-        if (target.value.parentElement) {
-            resizeObserver.unobserve(target.value.parentElement);
-        }
-        resizeObserver = null;
-    }
-});
 </script>
 
 <style lang="scss" scoped>
