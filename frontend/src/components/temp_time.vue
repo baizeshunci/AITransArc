@@ -29,142 +29,76 @@ const props = defineProps({
             return value.xAxis && value.series &&
                 Array.isArray(value.xAxis) &&
                 Array.isArray(value.series) &&
-                value.xAxis.length > 0 &&  // 确保有数据点
+                value.xAxis.length > 0 &&
                 value.series.length > 0;
         }
     }
 });
 
-// 引用DOM元素
+// 引用DOM容器
 const target = ref(null);
-const chartCard = ref(null);
-// ECharts实例
 let eChart = null;
-// 避免重复初始化的标记
 let isRendering = false;
+let resizeObserver = null;
 
-// 计算父容器限制尺寸
-const getParentConstrainedSize = (container) => {
-    if (!container?.parentElement) return { width: 0, height: 0 };
+// 记录上一次尺寸，避免重复弹窗
+let lastWidth = 0;
+let lastHeight = 0;
 
-    const parent = container.parentElement;
-    const parentRect = parent.getBoundingClientRect();
-
-    // 限制最大尺寸为父容器的95%（预留边距）
-    const maxWidth = parentRect.width * 0.95;
-    const maxHeight = parentRect.height * 0.95;
-
-    // 限制最小尺寸（增大最小高度避免底部文字溢出）
-    const minWidth = Math.max(240, maxWidth * 0.4); // 增大最小宽度
-    const minHeight = Math.max(180, maxHeight * 0.4); // 增大最小高度
-
-    return {
-        width: Math.min(container.clientWidth, maxWidth, Math.max(container.clientWidth, minWidth)),
-        height: Math.min(container.clientHeight, maxHeight, Math.max(container.clientHeight, minHeight))
-    };
-};
-
-// 动态计算网格边距（核心优化：增加底部边距防止文字溢出）
-const getGridConfig = (size) => {
-    // 根据容器尺寸动态调整底部边距
-    const bottomMargin = size.height < 250 ? '22%' : // 小容器增加底部边距
-        size.height < 350 ? '17%' : '12%';
-
-    return {
-        left: size.width < 300 ? '6%' : '3%',
-        right: size.width < 300 ? '8%' : '4%',
-        bottom: bottomMargin,  // 优化底部边距
-        top: size.height < 200 ? '8%' : '4%',  // 适当增加顶部边距
-        containLabel: true
-    };
-};
-
-// 计算需要隐藏的标签索引
-const getHiddenLabelIndexes = (dataLength, containerWidth) => {
-    // 估算每个标签需要的最小宽度（像素）
-    const labelMinWidth = 50;
-    // 计算理论上能完整显示的最大标签数量
-    const maxVisibleLabels = Math.floor(containerWidth / labelMinWidth);
-
-    // 如果数据量超过可显示数量，需要隐藏中间部分
-    if (dataLength > maxVisibleLabels && maxVisibleLabels >= 2) {
-        const hiddenCount = dataLength - maxVisibleLabels;
-        const startHideIndex = Math.floor((dataLength - hiddenCount) / 2);
-        const endHideIndex = startHideIndex + hiddenCount;
-
-        // 返回需要隐藏的标签索引数组
-        return Array.from({ length: hiddenCount }, (_, i) => startHideIndex + i);
-    }
-
-    return []; // 无需隐藏
-};
-
-// 窗口大小变化时调整图表
+// 尺寸变化时调整图表并弹窗
 const handleResize = () => {
-    if (eChart) {
+    if (eChart && target.value) {
+        // 获取实时尺寸
+        const currentWidth = Math.round(target.value.offsetWidth);
+        const currentHeight = Math.round(target.value.offsetHeight);
+        
+        // 尺寸变化时弹窗
+        if (currentWidth !== lastWidth || currentHeight !== lastHeight) {
+            alert(`图表尺寸已变化：\n宽=${currentWidth}px, 高=${currentHeight}px`);
+            lastWidth = currentWidth;
+            lastHeight = currentHeight;
+        }
+        
         eChart.resize();
     }
 };
 
-// 检查容器尺寸是否有效
-const checkContainerSize = () => {
-    if (!target.value) return false;
-    const { clientWidth, clientHeight } = target.value;
-    // 提高最小尺寸要求避免过小容器
-    return clientWidth > 50 && clientHeight > 80;
+// 根据实时尺寸计算网格配置（增加内部空白）
+const getGridConfig = () => {
+    if (!target.value) return {};
+    
+    const { offsetWidth: width, offsetHeight: height } = target.value;
+    
+    // 核心：增大网格边距（图表内容与边框的空白）
+    const left = width < 300 ? '3%' : '2%'; // 左侧空白
+    const right = width < 300 ? '6%' : '5%'; // 右侧空白
+    const top = height < 200 ? '8%' : '5%'; // 顶部空白
+    const bottom = height < 250 ? '25%' : height < 350 ? '20%' : '15%'; // 底部空白
+
+    return {
+        left,
+        right,
+        top,
+        bottom,
+        containLabel: true // 确保标签不被裁剪
+    };
 };
 
-// 渲染图表
+// 渲染图表（精简版）
 const renderChart = async () => {
-    // 防止重复渲染
-    if (isRendering) return;
+    if (isRendering || !target.value) return;
     isRendering = true;
 
     try {
-        // 等待DOM更新并检查容器尺寸
         await nextTick();
-        if (!checkContainerSize()) {
-            // 尺寸无效时延迟重试
-            let retryCount = 0;
-            const retry = () => {
-                if (retryCount >= 5) {
-                    console.error("图表容器尺寸始终无效，无法初始化ECharts");
-                    isRendering = false;
-                    return;
-                }
-                setTimeout(async () => {
-                    await nextTick();
-                    if (checkContainerSize()) {
-                        renderChart();
-                    } else {
-                        retryCount++;
-                        retry();
-                    }
-                }, 100);
-            };
-            retry();
-            return;
-        }
-
-        // 应用尺寸约束
-        const constrained = getParentConstrainedSize(target.value);
-        target.value.style.width = `${constrained.width}px`;
-        target.value.style.height = `${constrained.height}px`;
-
+        
         // 初始化或复用ECharts实例
         if (!eChart) {
             eChart = echarts.init(target.value);
         }
 
-        // 设置图表配置
-        const grid = getGridConfig(constrained);
-
-        // 计算需要隐藏的标签索引
-        const hiddenIndexes = getHiddenLabelIndexes(
-            props.data.xAxis.length,
-            constrained.width
-        );
-
+        // 基于实时尺寸设置图表配置
+        const grid = getGridConfig();
         const options = {
             backgroundColor: 'transparent',
             tooltip: {
@@ -186,22 +120,17 @@ const renderChart = async () => {
                 axisLabel: {
                     color: 'rgba(209, 213, 219, 0.7)',
                     fontSize: 'clamp(0.5rem, 1.5vw, 0.65rem)',
-                    interval: 0,  // 强制显示所有标签位置
-                    rotate: 0,    // 固定不旋转
-                    margin: 8,    // 增加与轴线的距离
-                    // 根据索引控制标签显示/隐藏
+                    rotate: 0,
+                    margin: 8,
                     formatter: (value, index) => {
-                        // 计算每个间隔的大小（根据容器宽度动态调整）
+                        const { offsetWidth: width } = target.value;
                         const intervalSize = Math.max(
-                            1, // 最小间隔为1（全部显示）
-                            Math.ceil(props.data.xAxis.length / (constrained.width / 60)) // 每60px显示一个标签
+                            1,
+                            Math.ceil(props.data.xAxis.length / (width / 60))
                         );
-
-                        // 只显示间隔点和首尾标签
                         if (index % intervalSize !== 0 && index !== 0 && index !== props.data.xAxis.length - 1) {
-                            return ''; // 隐藏非间隔点的标签
+                            return '';
                         }
-
                         return value;
                     }
                 },
@@ -216,12 +145,10 @@ const renderChart = async () => {
                     color: 'rgba(209, 213, 219, 0.7)',
                     fontSize: 'clamp(0.5rem, 1.5vw, 0.65rem)',
                     align: 'right',
-                    margin: 5  // 增加右侧边距
+                    margin: 5
                 },
                 splitLine: {
-                    lineStyle: {
-                        color: 'rgba(200, 200, 200, 0.1)'
-                    }
+                    lineStyle: { color: 'rgba(200, 200, 200, 0.1)' }
                 }
             },
             series: props.data.series.map((item) => ({
@@ -259,9 +186,7 @@ const renderChart = async () => {
                         textStyle: { color: '#fff' },
                         formatter: (params) => `${params.data.name}: ${params.data.yAxis || params.value.toFixed(1)}°C`
                     },
-                    label: {
-                        show: false,
-                    },
+                    label: { show: false },
                     symbol: 'none',
                     lineStyle: { type: 'dashed', width: 1.5 },
                     data: [
@@ -273,7 +198,6 @@ const renderChart = async () => {
             }))
         };
 
-        // 应用配置
         eChart.setOption(options, true);
     } catch (error) {
         console.error("图表渲染出错:", error);
@@ -282,13 +206,26 @@ const renderChart = async () => {
     }
 };
 
-// 组件挂载时初始化
+// 组件挂载时初始化监听
 onMounted(() => {
     renderChart();
-    window.addEventListener('resize', handleResize);
+    if (target.value) {
+        const observeElements = [target.value];
+        if (target.value.parentElement) {
+            observeElements.push(target.value.parentElement);
+        }
+        
+        resizeObserver = new ResizeObserver(entries => {
+            handleResize();
+        });
+        
+        observeElements.forEach(el => {
+            resizeObserver.observe(el, { box: 'border-box' });
+        });
+    }
 });
 
-// 监听父组件数据变化，实时更新图表
+// 监听数据变化
 watch(() => props.data, () => {
     renderChart();
 }, { deep: true });
@@ -299,7 +236,13 @@ onUnmounted(() => {
         eChart.dispose();
         eChart = null;
     }
-    window.removeEventListener('resize', handleResize);
+    if (resizeObserver && target.value) {
+        resizeObserver.unobserve(target.value);
+        if (target.value.parentElement) {
+            resizeObserver.unobserve(target.value.parentElement);
+        }
+        resizeObserver = null;
+    }
 });
 </script>
 
@@ -349,8 +292,10 @@ onUnmounted(() => {
 }
 
 .chart-container {
-    width: 100%;
-    height: 100%;
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
     overflow: hidden;
     box-sizing: border-box;
 }

@@ -50,7 +50,7 @@
           <TemperatureChart :data="currentData.temperature" />
         </div>
         <div class="flex-1 p-1 rounded-md text-center">
-          <p>压力-时间曲线(实时压力波动折线，带阈值线)</p>
+          <Stress_time :data="currentData.pressure"/>
         </div>
         <div class="flex-1 p-1 rounded-md text-center">
           <p>变压器 2D 模型图(带传感器位置标注,点击弹窗显示放电点)</p>
@@ -71,6 +71,7 @@ import TemperatureChart from "./components/temp_time.vue";
 import FaultType from "./components/fault_type.vue";
 import UltrasonicChartSwitcher from "./components/ultrasonic_chart_switcher.vue";
 import PulseCurrentMultiAnalysisChart from "./components/pulse_current_multi_analysis_chart.vue";
+import Stress_time from "./components/stress_time.vue";
 import { ref } from 'vue';
 
 // 故障类型列表
@@ -83,7 +84,7 @@ const faultTypes = [
   '未知类型'
 ];
 
-// 完整模拟数据源
+// 完整模拟数据源（含电弧放电压力数据）
 const mockDataSource = {
   '正常状态': {
     temperature: {
@@ -93,6 +94,17 @@ const mockDataSource = {
           name: '环境温度',
           data: [18.5, 17.2, 16.8, 19.5, 23.2, 25.6, 24.8, 22.0, 20.5],
           color: '#4CAF50',
+          smooth: true
+        }
+      ]
+    },
+    pressure: {
+      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
+      series: [
+        {
+          name: '油中压力',
+          data: [0.12, 0.11, 0.10, 0.12, 0.13, 0.14, 0.13, 0.12, 0.11],
+          color: '#2196F3',
           smooth: true
         }
       ]
@@ -109,6 +121,18 @@ const mockDataSource = {
           smooth: true
         }
       ]
+    },
+    pressure: {
+      // 电弧放电压力特征：12:00左右发生放电，压力骤升后逐渐回落
+      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
+      series: [
+        {
+          name: '油中压力',
+          data: [0.13, 0.14, 0.15, 0.16, 0.85, 0.52, 0.38, 0.25, 0.18],
+          color: '#E91E63',
+          smooth: false // 电弧放电压力突变，关闭平滑效果
+        }
+      ]
     }
   },
   '电晕放电': {
@@ -119,6 +143,17 @@ const mockDataSource = {
           name: '环境温度',
           data: [20.5, 21.2, 22.8, 23.5, 25.2, 26.6, 25.8, 24.0, 22.5],
           color: '#FFC107',
+          smooth: true
+        }
+      ]
+    },
+    pressure: {
+      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
+      series: [
+        {
+          name: '油中压力',
+          data: [0.14, 0.15, 0.16, 0.17, 0.22, 0.25, 0.23, 0.20, 0.18],
+          color: '#9C27B0',
           smooth: true
         }
       ]
@@ -135,6 +170,18 @@ const mockDataSource = {
           smooth: true
         }
       ]
+    },
+    pressure: {
+      // 火花放电压力特征：多次小幅脉冲
+      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
+      series: [
+        {
+          name: '油中压力',
+          data: [0.12, 0.13, 0.30, 0.15, 0.35, 0.18, 0.28, 0.16, 0.14],
+          color: '#673AB7',
+          smooth: false
+        }
+      ]
     }
   },
   '内部故障': {
@@ -148,6 +195,18 @@ const mockDataSource = {
           smooth: true
         }
       ]
+    },
+    pressure: {
+      // 内部故障压力特征：持续上升
+      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
+      series: [
+        {
+          name: '油中压力',
+          data: [0.15, 0.20, 0.28, 0.35, 0.42, 0.50, 0.58, 0.65, 0.72],
+          color: '#795548',
+          smooth: true
+        }
+      ]
     }
   },
   '未知类型': {
@@ -158,6 +217,17 @@ const mockDataSource = {
           name: '环境温度',
           data: [17.6, 18.3, 19.1, 20.8, 22.5, 23.7, 22.9, 21.4, 17.6],
           color: '#9E9E9E',
+          smooth: true
+        }
+      ]
+    },
+    pressure: {
+      xAxis: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
+      series: [
+        {
+          name: '油中压力',
+          data: [0.13, 0.14, 0.16, 0.18, 0.25, 0.22, 0.19, 0.17, 0.15],
+          color: '#607D8B',
           smooth: true
         }
       ]
@@ -179,9 +249,16 @@ function handleTypeChange(newType) {
 <style scoped>
 #building {
   background: url("@/assets/bg.jpg") center/cover no-repeat fixed;
-  /* 确保根容器高度严格等于视口高度 */
   height: 100vh;
-  overflow: hidden; /* 禁止页面级滚动 */
+  overflow: hidden; /* 保持页面级不滚动 */
+}
+
+.content-container {
+  flex: 1;
+  overflow: auto; /* 内容区超出时显示内部滚动条 */
+  padding: 0.25rem;
+  /* 限制最大高度为视口剩余空间（避免撑开屏幕） */
+  max-height: calc(100vh - 60px - 40px); /* 减去标题栏和类型选择栏高度 */
 }
 
 /* 标题容器：限制最小高度，避免文字换行导致高度增加 */
@@ -191,12 +268,6 @@ function handleTypeChange(newType) {
   padding: 0.5rem 0; /* 垂直内边距减小 */
 }
 
-/* 内容容器：填充剩余空间，内部内容超出时不溢出页面 */
-.content-container {
-  flex: 1; /* 占满视口剩余高度 */
-  overflow: hidden; /* 防止内部内容撑开页面 */
-  padding: 0.25rem; /* 减小内边距 */
-}
 
 /* 类型选择容器：固定底部高度，避免挤压内容区 */
 .type-container {

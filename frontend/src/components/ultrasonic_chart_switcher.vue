@@ -101,10 +101,11 @@ const generateFrequencyData = () => {
   return data;
 };
 
-// 动态计算网格边距（基于约束后的尺寸）
+// 动态计算网格边距（增加左侧边距，为Y轴标签预留空间）
 const getGridConfig = (size) => {
   return {
-    left: size.width < 300 ? '5%' : '1%',
+    // 左侧边距增大，避免Y轴标签与内容重叠
+    left: size.width < 300 ? '5%' : '3%',  // 小尺寸时左侧留更多空间
     right: size.width < 300 ? '8%' : '5%',
     bottom: size.height < 200 ? '20%' : '15%',
     top: size.height < 200 ? '10%' : '6%',
@@ -157,7 +158,13 @@ const initTimeDomainChart = () => {
         fontSize: 'clamp(0.55rem, 1.8vw, 0.65rem)',
         formatter: (value) => value.toFixed(2),
         align: 'right',
-        margin: 2
+        // 增加标签与轴线的距离（关键修复）
+        margin: constrained.width < 300 ? 6 : 4  // 小尺寸时边距更大
+      },
+      // 可选：添加轴线内边距，进一步分离轴线和标签
+      axisTick: {
+        inside: false,  // 刻度线向外，避免与标签冲突
+        length: 0      // 缩短刻度线长度
       },
       splitLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.1)' } }
     },
@@ -236,7 +243,13 @@ const initFrequencyChart = () => {
         fontSize: 'clamp(0.55rem, 1.8vw, 0.65rem)',
         formatter: (value) => value.toFixed(2),
         align: 'right',
-        margin: 2
+        // 增加标签与轴线的距离（关键修复）
+        margin: constrained.width < 300 ? 6 : 4  // 小尺寸时边距更大
+      },
+      // 可选：添加轴线内边距，进一步分离轴线和标签
+      axisTick: {
+        inside: false,  // 刻度线向外，避免与标签冲突
+        length: 0      // 缩短刻度线长度
       },
       splitLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.1)' } }
     },
