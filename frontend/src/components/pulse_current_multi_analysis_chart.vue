@@ -8,7 +8,9 @@
       class="absolute bg-card-dark rounded-lg border border-gray-700 shadow-lg transition-all duration-300 ease-out cursor-pointer"
     >
       <div class="px-[2%] pt-[1%] pb-[1%] flex items-center justify-between">
-        <div class="text-gray-300 font-medium text-[clamp(0.7rem,2vw,0.8rem)]">脉冲时间峰值分布</div>
+        <div class="text-gray-300 font-medium text-[clamp(0.7rem,2vw,0.8rem)]">脉冲时间峰值分布
+          <span class="ml-2 text-blue-400 text-[clamp(0.5rem,1vw,0.6rem)]">单击切换</span>
+        </div>
         <div class="text-gray-400 text-[clamp(0.6rem,1.5vw,0.7rem)]">
           峰值电流 / 时间 (s)
         </div>
@@ -34,7 +36,9 @@
       class="absolute bg-card-dark rounded-lg border border-blue-500/30 shadow-xl transition-all duration-300 ease-out cursor-pointer"
     >
       <div class="px-[2%] pt-[1%] pb-[1%] flex items-center justify-between">
-        <div class="text-gray-300 font-medium text-[clamp(0.7rem,2vw,0.8rem)]">脉冲峰值区间频率</div>
+        <div class="text-gray-300 font-medium text-[clamp(0.7rem,2vw,0.8rem)]">脉冲峰值区间频率
+          <span class="ml-2 text-blue-400 text-[clamp(0.5rem,1vw,0.6rem)]">单击切换</span>
+        </div>
         <div class="text-gray-400 text-[clamp(0.6rem,1.5vw,0.7rem)]">
           出现次数 / 电流区间 (mA)
         </div>
@@ -57,10 +61,11 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, nextTick, defineProps } from "vue";
 import * as echarts from "echarts";
-import { useBaseChart } from "./js/base-chart";
+import { useBaseChart } from "./utils_js/base-chart";
+
 
 // 1. 定义接收的外部数据 props
-const props = defineProps({
+const props = defineProps({ 
   // 脉冲时间-峰值数据：格式为 [[时间1, 峰值1], [时间2, 峰值2], ...]
   pulseTimeData: {
     type: Array,
@@ -120,9 +125,6 @@ const toggleStack = async () => {
   await nextTick();
   renderCharts();
 };
-
-// 2. 移除随机生成函数，改为使用 props 数据
-// （原 generatePulseTimeData 和 generatePulseFreqData 已删除）
 
 // 3. 根据传入的脉冲时间数据计算频率分布（如果未传入 pulseFreqData）
 const calculateFreqData = () => {

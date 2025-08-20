@@ -19,7 +19,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
 import * as echarts from "echarts";
-import { useBaseChart } from "./js/base-chart";
+import { useBaseChart } from "./utils_js/base-chart";
+import { getGridConfig, getAxisBaseConfig, getTooltipBaseConfig, getXAxisLabelFormatter ,getYAxisLabelFormatter } from "./utils_js/chart_utils";
 
 // 接收父组件传入的数据
 const props = defineProps({
@@ -39,82 +40,79 @@ const props = defineProps({
 // 引用DOM容器
 const target = ref(null);
 
-// 根据实时尺寸计算网格配置（增加内部空白）
-const getGridConfig = () => {
-    if (!target.value) return {};
-
-    const { offsetWidth: width, offsetHeight: height } = target.value;
-
-    // 核心：增大网格边距（图表内容与边框的空白）
-    const left = width < 300 ? '3%' : '2%'; // 左侧空白
-    const right = width < 300 ? '6%' : '5%'; // 右侧空白
-    const top = height < 200 ? '8%' : '5%'; // 顶部空白
-    const bottom = height < 250 ? '25%' : height < 350 ? '20%' : '15%'; // 底部空白
-
-    return {
-        left,
-        right,
-        top,
-        bottom,
-        containLabel: true // 确保标签不被裁剪
-    };
+const getGrid = () => {
+    return getGridConfig(target.value, {
+        type: 'temperature' // 对应通用配置中的温度图表规则
+    });
 };
 
 
 useBaseChart({
     target: target, // 图表容器的ref（已在组件中定义）
     getOption: () => { // 生成当前图表的个性化配置
-        const grid = getGridConfig();
+        const grid = getGrid();
         return {
             backgroundColor: 'transparent',
             tooltip: {
                 trigger: 'axis',
-                backgroundColor: 'rgba(17, 24, 39, 0.9)',
-                borderColor: 'rgba(59, 130, 246, 0.3)',
-                borderWidth: 1,
-                textStyle: { color: '#e5e7eb' },
+                ...getTooltipBaseConfig(),
                 formatter: (params) => {
                     return `${params[0].name}<br/>${params[0].seriesName}: ${params[0].value}°C`;
                 }
             },
             grid,
             xAxis: {
-                type: 'category',
-                boundaryGap: false,
-                data: props.data.xAxis,
-                axisLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.3)' } },
+                // 1. 复用通用坐标轴样式（仅样式，无数据逻辑）
+                ...getAxisBaseConfig('category'),
+                // 2. 业务组件自行管理数据和个性化逻辑（核心）
+                data: props.data.xAxis, // 绑定x轴原始数据（如时间数组）
+                boundaryGap: false, // 温度图表特有：取消坐标轴两边留白
                 axisLabel: {
-                    color: 'rgba(209, 213, 219, 0.7)',
-                    fontSize: 'clamp(0.5rem, 1.5vw, 0.65rem)',
-                    rotate: 0,
-                    margin: 8,
+                    // 合并通用样式（颜色、字体）和个性化配置
+                    ...getAxisBaseConfig('category').axisLabel,
+                    rotate: 0, // 温度图表x轴标签不旋转
+                    margin: 8, // 标签与轴线的距离
+                    // 温度图表特有：控制标签显示间隔（避免拥挤）
+                    formatter: getXAxisLabelFormatter({ intervalPixel: 45, target, data: props.data.xAxis })
+                },
+                showMaxLabel: true, // 强制显示最后一个标签
+                // 如需覆盖通用样式，可在此添加（如隐藏分割线）
+                // splitLine: { show: false }
+            },
+            // y轴核心配置（复用样式 + 温度数据特性）
+            // y轴核心配置（复用样式 + 温度数据特性 + 间隔计算）
+            yAxis: {
+                // 1. 复用通用坐标轴样式
+                ...getAxisBaseConfig('value'),
+                // 2. 温度图表y轴特有的配置
+                axisLabel: {
+                    // 合并通用样式
+                    ...getAxisBaseConfig('value').axisLabel,
+                    // 结合y轴专用间隔计算 + 温度单位
                     formatter: (value, index) => {
-                        const { offsetWidth: width } = target.value;
-                        const intervalSize = Math.max(
-                            1,
-                            Math.ceil(props.data.xAxis.length / (width / 60))
-                        );
-                        if (index % intervalSize !== 0 && index !== 0 && index !== props.data.xAxis.length - 1) {
-                            return '';
-                        }
-                        return value;
+                        // 调用y轴专用格式化工具计算是否显示标签
+                        const shouldShow = getYAxisLabelFormatter({
+                            intervalPixel: 30, // 垂直方向每个标签的间隔像素
+                            target: target,    // 图表容器引用
+                            splitNumber: 5     // 与下方splitNumber保持一致
+                        })(value, index);
+
+                        // 显示的标签添加℃单位，不显示的返回空
+                        return shouldShow ? `${value}°C` : '';
                     }
                 },
-                showMaxLabel: true,
-                splitLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.1)' } }
-            },
-            yAxis: {
-                type: 'value',
-                axisLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.3)' } },
-                axisLabel: {
-                    formatter: '{value}°C',
-                    color: 'rgba(209, 213, 219, 0.7)',
-                    fontSize: 'clamp(0.5rem, 1.5vw, 0.65rem)',
-                    align: 'right',
-                    margin: 5
-                },
+                // 3. 温度数据范围控制（支持父组件传入，无默认值则自动计算）
+                min: props.minTemp !== undefined ? props.minTemp : null,
+                max: props.maxTemp !== undefined ? props.maxTemp : null,
+                // 4. 分割线优化（固定分割数，与间隔计算关联）
+                splitNumber: 5,
+                // 5. 网格线样式增强（可选优化）
                 splitLine: {
-                    lineStyle: { color: 'rgba(200, 200, 200, 0.1)' }
+                    ...getAxisBaseConfig('value').splitLine,
+                    lineStyle: {
+                        ...getAxisBaseConfig('value').splitLine.lineStyle,
+                        type: 'dashed' // 温度图表网格线用虚线更易区分
+                    }
                 }
             },
             series: props.data.series.map((item) => ({

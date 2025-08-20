@@ -18,7 +18,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
 import * as echarts from "echarts";
-import { useBaseChart } from "./js/base-chart";
+import { useBaseChart } from "./utils_js/base-chart";
 
 // 接收父组件传入的数据
 const props = defineProps({

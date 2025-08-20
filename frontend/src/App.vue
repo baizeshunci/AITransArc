@@ -73,7 +73,7 @@ import UltrasonicChartSwitcher from "./components/ultrasonic_chart_switcher.vue"
 import PulseCurrentMultiAnalysisChart from "./components/pulse_current_multi_analysis_chart.vue";
 import Stress_time from "./components/stress_time.vue";
 import { ref , computed} from 'vue';
-import MockDataSource from './components/AI_test_data.js';
+import MockDataSource from './components/utils_js/AI_test_data.js';
 
 // 故障类型列表
 const faultTypes = [
