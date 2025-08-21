@@ -19,6 +19,7 @@
 import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
 import * as echarts from "echarts";
 import { useBaseChart } from "./utils_js/base-chart";
+import { getGridConfig, getAxisBaseConfig, getTooltipBaseConfig, getXAxisLabelFormatter, getYAxisLabelFormatter } from "./utils_js/chart_utils";
 
 // 接收父组件传入的数据
 const props = defineProps({
@@ -38,39 +39,22 @@ const props = defineProps({
 // 引用DOM容器
 const target = ref(null);
 
-// 根据实时尺寸计算网格配置
-const getGridConfig = () => {
-    if (!target.value) return {};
 
-    const { offsetWidth: width, offsetHeight: height } = target.value;
-
-    // 核心：增大网格边距（图表内容与边框的空白）
-    // 左右边距调整为 8%~5%，上下边距调整为 15%~10%，比原来更大
-    const left = width < 300 ? '3%' : '2%'; // 左侧空白
-    const right = width < 300 ? '6%' : '5%'; // 右侧空白
-    const top = height < 200 ? '8%' : '5%'; // 顶部空白
-    const bottom = height < 250 ? '25%' : height < 350 ? '20%' : '15%'; // 底部空白
-
-    return {
-        left,
-        right,
-        top,
-        bottom,
-        containLabel: true // 确保标签不被裁剪
-    };
+const getGrid = () => {
+    return getGridConfig(target.value, {
+        type: 'Stress_time' // 对应通用配置中的温度图表规则
+    });
 };
 
 useBaseChart({
     target: target, // 图表容器的ref（已在组件中定义）
     getOption: () => { // 生成当前图表的个性化配置
-        const grid = getGridConfig();
+        const grid = getGrid();
         return {
             backgroundColor: 'transparent',
             tooltip: {
                 trigger: 'axis',
-                backgroundColor: 'rgba(17, 24, 39, 0.9)',
-                borderColor: 'rgba(59, 130, 246, 0.3)',
-                borderWidth: 1,
+                ...getTooltipBaseConfig(),
                 textStyle: { color: '#e5e7eb' },
                 formatter: (params) => {
                     return `${params[0].name}<br/>${params[0].seriesName}: ${params[0].value}°C`;
@@ -78,44 +62,34 @@ useBaseChart({
             },
             grid,
             xAxis: {
-                type: 'category',
-                boundaryGap: false,
+                ...getAxisBaseConfig('category'),
                 data: props.data.xAxis,
+                boundaryGap: false,
                 axisLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.3)' } },
                 axisLabel: {
-                    color: 'rgba(209, 213, 219, 0.7)',
-                    fontSize: 'clamp(0.5rem, 1.5vw, 0.65rem)',
-                    interval: 0,
+                    ...getAxisBaseConfig('category').axisLabel,
                     rotate: 0,
                     margin: 8,
-                    formatter: (value, index) => {
-                        const { offsetWidth: width } = target.value;
-                        const intervalSize = Math.max(
-                            1,
-                            Math.ceil(props.data.xAxis.length / (width / 60))
-                        );
-                        if (index % intervalSize !== 0 && index !== 0 && index !== props.data.xAxis.length - 1) {
-                            return '';
-                        }
-                        return value;
-                    }
+                    formatter: getXAxisLabelFormatter({ intervalPixel: 45, target, data: props.data.xAxis })
                 },
                 showMaxLabel: true,
-                splitLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.1)' } }
             },
             yAxis: {
-                type: 'value',
-                axisLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.3)' } },
+                ...getAxisBaseConfig('value'),
                 axisLabel: {
-                    formatter: '{value}°C',
-                    color: 'rgba(209, 213, 219, 0.7)',
-                    fontSize: 'clamp(0.5rem, 1.5vw, 0.65rem)',
-                    align: 'right',
-                    margin: 5
+                    ...getAxisBaseConfig('value').axisLabel,
+                    formatter: (value, index) => {
+                        // 调用y轴专用格式化工具计算是否显示标签
+                        const shouldShow = getYAxisLabelFormatter({
+                            intervalPixel: 30, // 垂直方向每个标签的间隔像素
+                            target: target,    // 图表容器引用
+                            splitNumber: 4     // 与下方splitNumber保持一致
+                        })(value, index);
+
+                        // 显示的标签，不显示的返回空
+                        return shouldShow ? `${value}` : '';
+                    }
                 },
-                splitLine: {
-                    lineStyle: { color: 'rgba(200, 200, 200, 0.1)' }
-                }
             },
             series: props.data.series.map((item) => ({
                 name: item.name || '温度',
@@ -169,12 +143,8 @@ useBaseChart({
 
 </script>
 <style lang="scss" scoped>
-.chart-stack-container {
-    background: transparent;
-    border-radius: 0.5em;
-    margin: 0;
-    overflow: hidden;
-}
+
+@use "../styles/chart_common" as *; 
 
 .temperature-chart-card {
     width: 100%;
@@ -197,28 +167,5 @@ useBaseChart({
     &:hover::before {
         opacity: 1;
     }
-}
-
-.chart-header {
-    user-select: none;
-    border-bottom: 1px solid rgba(200, 200, 200, 0.1);
-    margin-bottom: 5px;
-}
-
-.bg-card-dark {
-    background: #1f2937;
-}
-
-.shadow-lg {
-    box-shadow: 0 0.2em 0.8em rgba(0, 0, 0, 0.2);
-}
-
-.chart-container {
-    width: 100% !important;
-    height: 100% !important;
-    min-width: 0 !important;
-    min-height: 0 !important;
-    overflow: hidden;
-    box-sizing: border-box;
 }
 </style>

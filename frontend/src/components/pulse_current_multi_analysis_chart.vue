@@ -2,7 +2,6 @@
   <div class="paper-stack-container relative w-full h-full overflow-hidden">
     <!-- 脉冲时间峰值柱状图 -->
     <div 
-      ref="pulseTimeRef"
       :class="{ 'active': isPulseTimeActive, 'inactive': !isPulseTimeActive }" 
       @click="toggleStack"
       class="absolute bg-card-dark rounded-lg border border-gray-700 shadow-lg transition-all duration-300 ease-out cursor-pointer"
@@ -30,7 +29,6 @@
 
     <!-- 脉冲峰值频率分布图 -->
     <div 
-      ref="pulseFreqRef"
       :class="{ 'active': !isPulseTimeActive, 'inactive': isPulseTimeActive }" 
       @click="toggleStack"
       class="absolute bg-card-dark rounded-lg border border-blue-500/30 shadow-xl transition-all duration-300 ease-out cursor-pointer"
@@ -59,7 +57,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch, nextTick, defineProps } from "vue";
+import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
 import * as echarts from "echarts";
 import { useBaseChart } from "./utils_js/base-chart";
 
@@ -93,11 +91,8 @@ const props = defineProps({
 
 // 状态管理
 const isPulseTimeActive = ref(true);
-const pulseTimeRef = ref(null);
-const pulseFreqRef = ref(null);
 let pulseTimeChart = null;
 let pulseFreqChart = null;
-let resizeObserver = null;
 
 // 图表容器ref
 const pulseTimeContainer = ref(null);
@@ -112,18 +107,7 @@ const legendData = [
 
 // 切换图表
 const toggleStack = async () => {
-  if (isPulseTimeActive.value && pulseTimeChart) {
-    pulseTimeChart.dispose();
-    pulseTimeChart = null;
-  }
-  if (!isPulseTimeActive.value && pulseFreqChart) {
-    pulseFreqChart.dispose();
-    pulseFreqChart = null;
-  }
-  
   isPulseTimeActive.value = !isPulseTimeActive.value;
-  await nextTick();
-  renderCharts();
 };
 
 // 3. 根据传入的脉冲时间数据计算频率分布（如果未传入 pulseFreqData）
@@ -159,49 +143,10 @@ const getGridConfig = (container) => {
   };
 };
 
-// 初始化尺寸监听器（保持不变）
-const initResizeListener = () => {
-  if (resizeObserver) return;
-
-  const observeTargets = [
-    pulseTimeContainer.value,
-    pulseFreqContainer.value
-  ].filter(Boolean);
-
-  resizeObserver = new ResizeObserver(entries => {
-    entries.forEach(entry => {
-      if (entry.target === pulseTimeContainer.value && pulseTimeChart) {
-        pulseTimeChart.resize();
-      }
-      if (entry.target === pulseFreqContainer.value && pulseFreqChart) {
-        pulseFreqChart.resize();
-      }
-    });
-  });
-
-  observeTargets.forEach(target => {
-    resizeObserver.observe(target, { box: 'border-box' });
-  });
-};
-
 // 初始化脉冲时间-峰值柱状图（使用 props 数据）
 const initPulseTimeChart = () => {
-  if (!pulseTimeContainer.value) {
-    console.warn("脉冲时间图容器未找到");
-    return;
-  }
   
   const container = pulseTimeContainer.value;
-
-  if (pulseTimeChart) pulseTimeChart.dispose();
-  
-  try {
-    pulseTimeChart = echarts.init(container);
-  } catch (error) {
-    console.error("脉冲时间图初始化失败：", error);
-    pulseTimeChart = null;
-    return;
-  }
 
   const getPulseTimeOption = () => {
     const grid = getGridConfig(container);
@@ -215,7 +160,7 @@ const initPulseTimeChart = () => {
     return {
       backgroundColor: 'transparent',
       animation: true,
-      animationDuration: 800,
+      animationDuration: 300,
       tooltip: {
         trigger: 'axis',
         backgroundColor: 'rgba(17, 24, 39, 0.9)',
@@ -260,15 +205,13 @@ const initPulseTimeChart = () => {
     };
   };
 
-  pulseTimeChart.setOption(getPulseTimeOption());
-
-  useBaseChart({
+  // 交给 useBaseChart 管理
+  return useBaseChart({
     target: pulseTimeContainer,
     getOption: getPulseTimeOption,
-    watchSource: () => isPulseTimeActive.value
+    watchSource: () => [isPulseTimeActive.value, props.pulseTimeData]
   });
 
-  initResizeListener();
 };
 
 // 初始化脉冲峰值区间频率图（使用 props 数据或计算数据）
@@ -302,7 +245,7 @@ const initPulseFreqChart = () => {
     return {
       backgroundColor: 'transparent',
       animation: true,
-      animationDuration: 800,
+      animationDuration: 300,
       tooltip: {
         trigger: 'item',
         backgroundColor: 'rgba(17, 24, 39, 0.9)',
@@ -355,7 +298,6 @@ const initPulseFreqChart = () => {
     watchSource: () => !isPulseTimeActive.value
   });
 
-  initResizeListener();
 };
 
 // 渲染图表（新增监听 props 变化，数据更新时重新渲染）
@@ -373,99 +315,14 @@ watch(isPulseTimeActive, renderCharts, { immediate: true });
 // 当外部传入的数据变化时，重新渲染图表
 watch(() => [props.pulseTimeData, props.pulseFreqData], renderCharts, { deep: true });
 
-// 生命周期管理（保持不变）
-onMounted(() => {
-  renderCharts();
-});
-
 onUnmounted(() => {
-  if (resizeObserver) {
-    resizeObserver.disconnect();
-    resizeObserver = null;
-  }
   if (pulseTimeChart) pulseTimeChart.dispose();
   if (pulseFreqChart) pulseFreqChart.dispose();
 });
 </script>
 
-<style scoped>
-/* 样式保持不变 */
-.paper-stack-container {
-  background: transparent;
-  padding: 2%;
-  border-radius: 0.5em;
-  margin: 0;
-  overflow: hidden;
-}
+<style lang="scss" scoped>
 
-.absolute {
-  width: 100%;
-  height: 100%;
-  box-sizing: border-box;
-}
+@use "../styles/chart_keynote.scss" as *;
 
-.active {
-  top: 0;
-  left: 0;
-  z-index: 20;
-  transform: translate(0, 0);
-  opacity: 1;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.inactive {
-  top: 0;
-  left: 0;
-  z-index: 10;
-  transform: translate(2%, 2%);
-  opacity: 0.45;
-  pointer-events: none;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.active:hover::before,
-.inactive::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 0.1em solid rgba(59, 130, 246, 0.5);
-  border-radius: 0.4em;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.25s;
-}
-
-.active:hover::before { opacity: 1; }
-.inactive::before { opacity: 0.7; }
-
-.bg-card-dark { background: #1f2937; }
-.shadow-lg { box-shadow: 0 0.2em 0.8em rgba(0, 0, 0, 0.2); }
-.shadow-xl { box-shadow: 0 0.3em 1.2em rgba(0, 0, 0, 0.25); }
-
-.chart-container {
-  width: 100% !important;
-  height: 100% !important;
-  min-width: 0 !important;
-  min-height: 0 !important;
-  overflow: hidden;
-  box-sizing: border-box;
-}
-
-.legend-container {
-  width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding-bottom: 0.3em;
-  white-space: nowrap;
-  -webkit-overflow-scrolling: touch;
-}
-
-.legend-container::-webkit-scrollbar {
-  height: 2px;
-}
-
-.legend-container::-webkit-scrollbar-thumb {
-  background: rgba(59, 130, 246, 0.5);
-  border-radius: 1px;
-}
 </style>

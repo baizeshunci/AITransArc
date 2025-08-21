@@ -1,3 +1,4 @@
+
 /**
  * 生成自适应的图表网格配置
  * @param {HTMLElement} container - 图表容器DOM元素
@@ -8,11 +9,18 @@
 export const getGridConfig = (container, options = {}) => {
   // 不同图表类型的网格配置规则（仅处理样式相关的边距计算）
   const typeConfig = {
-    temperature: {
+    Temperature_time: {
       left: (w) => w < 300 ? '3%' : '2%',
       right: (w) => w < 300 ? '6%' : '5%',
       top: (h) => h < 200 ? '8%' : '5%',
       bottom: (h) => h < 250 ? '25%' : h < 350 ? '20%' : '15%'
+    },
+    Stress_time:{
+      left: (w) => w < 300 ? '3%' : '2%',
+      right: (w) => w < 300 ? '6%' : '5%',
+      top: (h) => h < 200 ? '8%' : '5%',
+      bottom: (h) => h < 250 ? '25%' : h < 350 ? '20%' : '15%'
+
     },
     'pulse-time': {
       left: (w) => w < 300 ? '7%' : '5%',
@@ -28,7 +36,7 @@ export const getGridConfig = (container, options = {}) => {
     }
   };
 
-  const config = typeConfig[options.type] || typeConfig.temperature;
+  const config = typeConfig[options.type] || typeConfig.Temperature_time;
   
   // 无容器时返回基础配置（确保不包含数据相关逻辑）
   if (!container) {
@@ -129,28 +137,39 @@ export const getXAxisLabelFormatter = (options) => {
 export const getYAxisLabelFormatter = (options) => {
   const { intervalPixel = 30, target, splitNumber = 5 } = options;
   return (value, index) => {
-    // 容器不存在或未挂载时，显示所有标签
+    // 容器未准备好时显示所有标签（初始化阶段）
     if (!target.value || !target.value.offsetHeight) {
       return value;
     }
 
-    // 强制显示第一个和最后一个标签（不受间隔影响）
+    const containerHeight = target.value.offsetHeight;
+    // 1. 计算最多能显示多少个标签（确保标签间距 ≥ intervalPixel）
+    const maxPossibleLabels = Math.floor(containerHeight / intervalPixel);
+    // 最多显示标签数不能超过总分割数，且至少显示2个（首尾）
+    const actualDisplayCount = Math.max(2, Math.min(maxPossibleLabels, splitNumber));
+
+    // 2. 强制显示首尾标签（索引0和最后一个）
     if (index === 0 || index === splitNumber - 1) {
       return value;
     }
 
-    const { offsetHeight: height } = target.value;
-    // 计算间隔（确保至少为1，避免除零错误）
-    const intervalSize = Math.max(
-      1,
-      Math.ceil(splitNumber / (height / intervalPixel))
-    );
-
-    // 中间标签按间隔规则显示
-    if (index % intervalSize !== 0) {
+    // 3. 如果最多只能显示2个标签（仅首尾），则隐藏所有中间标签
+    if (actualDisplayCount === 2) {
       return '';
     }
-    
-    return value;
+
+    // 4. 计算需要显示的中间标签数量
+    const middleCount = actualDisplayCount - 2;
+    // 计算标签间隔步长（确保中间标签均匀分布）
+    const step = Math.ceil((splitNumber - 1) / (middleCount + 1));
+
+    // 5. 中间标签索引必须是 step 的倍数（且不为0和最后一个）
+    if (index % step === 0) {
+      return value;
+    }
+
+    // 其他标签隐藏
+    return '';
   };
 };
+    

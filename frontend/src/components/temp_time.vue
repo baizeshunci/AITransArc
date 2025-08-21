@@ -98,7 +98,7 @@ useBaseChart({
                         })(value, index);
 
                         // 显示的标签添加℃单位，不显示的返回空
-                        return shouldShow ? `${value}°C` : '';
+                        return shouldShow ? `${value}` : '';
                     }
                 },
                 // 3. 温度数据范围控制（支持父组件传入，无默认值则自动计算）
@@ -168,12 +168,8 @@ useBaseChart({
 </script>
 
 <style lang="scss" scoped>
-.chart-stack-container {
-    background: transparent;
-    border-radius: 0.5em;
-    margin: 0;
-    overflow: hidden;
-}
+
+@use "../styles/chart_common" as *; 
 
 .temperature-chart-card {
     width: 100%;
@@ -198,26 +194,4 @@ useBaseChart({
     }
 }
 
-.chart-header {
-    user-select: none;
-    border-bottom: 1px solid rgba(200, 200, 200, 0.1);
-    margin-bottom: 5px;
-}
-
-.bg-card-dark {
-    background: #1f2937;
-}
-
-.shadow-lg {
-    box-shadow: 0 0.2em 0.8em rgba(0, 0, 0, 0.2);
-}
-
-.chart-container {
-    width: 100% !important;
-    height: 100% !important;
-    min-width: 0 !important;
-    min-height: 0 !important;
-    overflow: hidden;
-    box-sizing: border-box;
-}
 </style>
