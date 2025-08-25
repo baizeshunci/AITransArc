@@ -8,7 +8,9 @@
       class="absolute bg-card-dark rounded-lg border border-gray-700 shadow-lg transition-all duration-300 ease-out cursor-pointer"
     >
       <div class="px-[2%] pt-[1%] pb-[1%] flex items-center justify-between">
-        <div class="text-gray-300 font-medium text-[clamp(0.7rem,2vw,0.8rem)]">时域波形图</div>
+        <div class="text-gray-300 font-medium text-[clamp(0.7rem,2vw,0.8rem)]">时域波形图
+          <span class="ml-2 text-blue-400 text-[clamp(0.5rem,1vw,0.6rem)]">单击切换</span>
+        </div>
         <div class="text-gray-400 text-[clamp(0.6rem,1.5vw,0.7rem)]">
           振幅 / 时间 (s)
         </div>
@@ -24,7 +26,9 @@
       class="absolute bg-card-dark rounded-lg border border-blue-500/30 shadow-xl transition-all duration-300 ease-out cursor-pointer"
     >
       <div class="px-[2%] pt-[1%] pb-[1%] flex items-center justify-between">
-        <div class="text-gray-300 font-medium text-[clamp(0.7rem,2vw,0.8rem)]">频谱分析图</div>
+        <div class="text-gray-300 font-medium text-[clamp(0.7rem,2vw,0.8rem)]">频谱分析图
+          <span class="ml-2 text-blue-400 text-[clamp(0.5rem,1vw,0.6rem)]">单击切换</span>
+        </div>
         <div class="text-gray-400 text-[clamp(0.6rem,1.5vw,0.7rem)]">
           能量 / 频率 (Hz)
         </div>
@@ -33,32 +37,65 @@
     </div>
   </div>
 </template>
-
 <script setup>
-import { ref, onMounted, onUnmounted, watch, nextTick, computed } from "vue";
+import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
 import * as echarts from "echarts";
+// 1. 引入复用的工具函数
+import { 
+  getGridConfig, 
+  getAxisBaseConfig,
+  getXAxisLabelFormatter,
+  getYAxisLabelFormatter,
+  getTooltipBaseConfig
+} from "./utils_js/chart_utils";
+// 2. 引入useBaseChart统一管理图表实例
+import { useBaseChart } from "./utils_js/base-chart";
+
+const props = defineProps({ 
+  timeDomain: { // 保持原有逻辑不变
+    type: Array,
+    required: true,
+    validator: (value) => {
+      return value.every(item => 
+        Array.isArray(item) && item.length === 2 && typeof item[0] === 'number' && typeof item[1] === 'number'
+      );
+    }
+  },
+  // 重点修改：frequency 校验规则（匹配二维数值数组）
+  frequency: {
+    type: Array,
+    default: null,
+    validator: (value) => {
+      if (!value) return true; // 允许为null
+      // 修复：验证格式为「[[频率数字, 能量数字], ...]」（与父组件数据对齐）
+      return value.every(item => 
+        Array.isArray(item) && item.length === 2 && 
+        typeof item[0] === 'number' && typeof item[1] === 'number'
+      );
+    }
+  }
+});
 
 const isTimeDomainActive = ref(true);
 const timeDomainRef = ref(null);
 const frequencyRef = ref(null);
-let timeChartInstance = null;
-let frequencyChartInstance = null;
-let isRendering = false;
 
-// 计算父容器限制尺寸（确保不超过父容器）
+// 1. 新增实例缓存变量（setup 阶段定义，全局唯一，仅新增这2行）
+const timeDomainChartIns = ref(null); // 缓存时域图实例
+const frequencyChartIns = ref(null); // 缓存频谱图实例
+
+
+// 计算父容器限制尺寸（保留原有逻辑）
 const getParentConstrainedSize = (container) => {
   if (!container?.parentElement) return { width: 0, height: 0 };
   
   const parent = container.parentElement;
   const parentRect = parent.getBoundingClientRect();
   
-  // 限制最大尺寸为父容器的95%（预留边距）
   const maxWidth = parentRect.width * 0.95;
   const maxHeight = parentRect.height * 0.95;
-  
-  // 限制最小尺寸（避免过小导致不可见）
-  const minWidth = Math.max(180, maxWidth * 0.3); // 不小于父容器30%且至少180px
-  const minHeight = Math.max(120, maxHeight * 0.3); // 不小于父容器30%且至少120px
+  const minWidth = Math.max(180, maxWidth * 0.3);
+  const minHeight = Math.max(120, maxHeight * 0.3);
   
   return {
     width: Math.min(container.clientWidth, maxWidth, Math.max(container.clientWidth, minWidth)),
@@ -66,327 +103,276 @@ const getParentConstrainedSize = (container) => {
   };
 };
 
+// 切换图表（保留原有逻辑）
 const toggleStack = () => {
-  if (timeChartInstance && isTimeDomainActive.value) timeChartInstance.clear();
-  if (frequencyChartInstance && !isTimeDomainActive.value) frequencyChartInstance.clear();
   isTimeDomainActive.value = !isTimeDomainActive.value;
 };
 
-// 生成时域数据
-const generateTimeDomainData = () => {
-  const points = Math.floor(window.innerWidth / 2);
-  const data = [];
-  for (let i = 0; i < points; i++) {
-    const x = i / points;
-    const baseSin = Math.sin(x * 20 * Math.PI) * 0.4;
-    const lowFreqSin = Math.sin(x * 4 * Math.PI) * 0.2;
-    const noise = (Math.random() * 2 - 1) * 0.04;
-    data.push([x, +(baseSin + lowFreqSin + noise).toFixed(4)]);
-  }
-  return data;
+// 1. 脉冲峰值专用颜色函数
+const getPulseColor = (value) => {
+  if (value == null) return '#9ca3af';
+  if (value <= 50) return '#3b82f6'; // 正常
+  if (value <= 80) return '#f59e0b'; // 异常
+  return '#ef4444'; // 故障
 };
 
-// 生成频谱数据
-const generateFrequencyData = () => {
-  const points = Math.floor(window.innerWidth / 5);
-  const data = [];
-  for (let i = 1; i < points; i++) {
-    const freq = 20000 * Math.pow(i / points, 0.7);
-    let amplitude = 0;
-    if (freq < 200) amplitude = 0.8 + Math.random() * 0.15;
-    else if (freq < 3000) amplitude = 1.0 + Math.random() * 0.25 - (freq - 200) / 30000;
-    else amplitude = 0.5 * (1 - (freq - 3000) / 17000) + Math.random() * 0.15;
-    data.push([+(freq).toFixed(0), +amplitude.toFixed(4)]);
-  }
-  return data;
+// 2. 时域振幅专用颜色函数（取绝对值）
+const getAmplitudeColor = (value) => {
+  if (value == null) return '#9ca3af';
+  const absValue = Math.abs(value); // 振幅正负不影响强度，取绝对值判断
+  if (absValue <= 0.5) return '#3b82f6'; // 正常
+  if (absValue <= 1.0) return '#f59e0b'; // 异常
+  return '#ef4444'; // 故障
 };
 
-// 动态计算网格边距（增加左侧边距，为Y轴标签预留空间）
-const getGridConfig = (size) => {
-  return {
-    // 左侧边距增大，避免Y轴标签与内容重叠
-    left: size.width < 300 ? '5%' : '3%',  // 小尺寸时左侧留更多空间
-    right: size.width < 300 ? '8%' : '5%',
-    bottom: size.height < 200 ? '20%' : '15%',
-    top: size.height < 200 ? '10%' : '6%',
-    containLabel: true
-  };
-};
-
-// 初始化时域波形图
 const initTimeDomainChart = () => {
-  if (!timeDomainRef.value) return null;
-  
-  const container = timeDomainRef.value.querySelector('.chart-container');
-  if (!container) return null;
-  
-  // 应用尺寸约束
+  // 1. 获取图表容器（基础安全校验：容器不存在则终止）
+  const container = timeDomainRef.value?.querySelector('.chart-container');
+  if (!container) return;
+
+  // 2. 应用尺寸约束（保留原有逻辑，若后续觉得冗余可基于 useBaseChart 自动适配删除）
   const constrained = getParentConstrainedSize(container);
   container.style.width = `${constrained.width}px`;
   container.style.height = `${constrained.height}px`;
-  
-  if (timeChartInstance) timeChartInstance.dispose();
-  timeChartInstance = echarts.init(container);
-  
-  const grid = getGridConfig(constrained);
-  
-  const option = {
-    backgroundColor: 'transparent',
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: 'rgba(17, 24, 39, 0.9)',
-      borderColor: 'rgba(59, 130, 246, 0.3)',
-      borderWidth: 1,
-      textStyle: { color: '#e5e7eb' }
-    },
-    grid,
-    xAxis: {
-      type: 'value',
-      axisLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.3)' } },
-      axisLabel: { 
-        color: 'rgba(209, 213, 219, 0.7)',
-        fontSize: 'clamp(0.55rem, 1.8vw, 0.65rem)',
-        formatter: (value) => value.toFixed(2)
+
+  // 3. 图表配置生成函数（保留内部定义，因依赖当前作用域的 container/constrained）
+  const getTimeDomainOption = () => {
+    const fontSize = `clamp(0.55rem, 1.8vw, 0.65rem)`;
+    const grid = getGridConfig(container, { type: 'time-domain' });
+    
+    const timeDomain = props.timeDomain.map(([time, value]) => ({
+      value: [time, value],
+      itemStyle: { color: getPulseColor(value) }
+    }));
+    
+    return {
+      backgroundColor: 'transparent',
+      animation: true,
+      animationDuration: 500,
+      tooltip: {
+        ...getTooltipBaseConfig(),
+        trigger: 'axis',
+        textStyle: { ...getTooltipBaseConfig().textStyle, fontSize }
       },
-      splitLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.1)' } }
-    },
-    yAxis: {
-      type: 'value',
-      axisLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.3)' } },
-      axisLabel: { 
-        color: 'rgba(209, 213, 219, 0.7)',
-        fontSize: 'clamp(0.55rem, 1.8vw, 0.65rem)',
-        formatter: (value) => value.toFixed(2),
-        align: 'right',
-        // 增加标签与轴线的距离（关键修复）
-        margin: constrained.width < 300 ? 6 : 4  // 小尺寸时边距更大
-      },
-      // 可选：添加轴线内边距，进一步分离轴线和标签
-      axisTick: {
-        inside: false,  // 刻度线向外，避免与标签冲突
-        length: 0      // 缩短刻度线长度
-      },
-      splitLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.1)' } }
-    },
-    series: [{
-      name: '波形',
-      type: 'line',
-      data: generateTimeDomainData(),
-      lineStyle: { 
-        color: 'rgba(59, 130, 246, 1)',
-        width: 1.5
-      },
-      areaStyle: {
-        color: {
-          type: 'linear',
-          x: 0, y: 0, x2: 0, y2: 1,
-          colorStops: [
-            { offset: 0, color: 'rgba(59, 130, 246, 0.25)' },
-            { offset: 1, color: 'rgba(59, 130, 246, 0)' }
-          ]
+      grid,
+      xAxis: {
+        ...getAxisBaseConfig('value', { fontSize }),
+        axisLabel: {
+          ...getAxisBaseConfig('value', { fontSize }).axisLabel,
+          formatter: (value) => value.toFixed(2)
         }
       },
-      symbol: 'none',
-      sampling: 'average',
-      animation: { duration: 500 }
-    }]
+      yAxis: {
+        ...getAxisBaseConfig('value', { fontSize }),
+        axisLabel: {
+          ...getAxisBaseConfig('value', { fontSize }).axisLabel,
+          formatter: (value) => value.toFixed(2),
+          align: 'right',
+          margin: constrained.width < 300 ? 6 : 4 // 依赖当前作用域的 constrained
+        },
+        axisTick: { inside: false, length: 0 }
+      },
+      series: [{
+        name: '波形',
+        type: 'line',
+        data: timeDomain,
+        lineStyle: { color: 'rgba(59, 130, 246, 1)', width: 1.5 },
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(59, 130, 246, 0.25)' },
+              { offset: 1, color: 'rgba(59, 130, 246, 0)' }
+            ]
+          }
+        },
+        symbol: 'none',
+        sampling: 'average',
+        animation: { duration: 500 }
+      }]
+    };
   };
-  
-  timeChartInstance.setOption(option);
-  return timeChartInstance;
-};
 
-// 初始化频谱分析图
-const initFrequencyChart = () => {
-  if (!frequencyRef.value) return null;
-  
-  const container = frequencyRef.value.querySelector('.chart-container');
-  if (!container) return null;
-  
-  // 应用尺寸约束
-  const constrained = getParentConstrainedSize(container);
-  container.style.width = `${constrained.width}px`;
-  container.style.height = `${constrained.height}px`;
-  
-  if (frequencyChartInstance) frequencyChartInstance.dispose();
-  frequencyChartInstance = echarts.init(container);
-  
-  const grid = getGridConfig(constrained);
-  
-  const option = {
-    backgroundColor: 'transparent',
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: 'rgba(17, 24, 39, 0.9)',
-      borderColor: 'rgba(59, 130, 246, 0.3)',
-      borderWidth: 1,
-      textStyle: { color: '#e5e7eb' }
-    },
-    grid,
-    xAxis: {
-      type: 'log',
-      min: 20,
-      max: 20000,
-      axisLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.3)' } },
-      axisLabel: { 
-        color: 'rgba(209, 213, 219, 0.7)',
-        fontSize: 'clamp(0.55rem, 1.8vw, 0.65rem)',
-        formatter: (value) => value >= 1000 ? (value/1000).toFixed(1) + 'k' : value.toFixed(0)
-      },
-      splitLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.1)' } }
-    },
-    yAxis: {
-      type: 'value',
-      axisLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.3)' } },
-      axisLabel: { 
-        color: 'rgba(209, 213, 219, 0.7)',
-        fontSize: 'clamp(0.55rem, 1.8vw, 0.65rem)',
-        formatter: (value) => value.toFixed(2),
-        align: 'right',
-        // 增加标签与轴线的距离（关键修复）
-        margin: constrained.width < 300 ? 6 : 4  // 小尺寸时边距更大
-      },
-      // 可选：添加轴线内边距，进一步分离轴线和标签
-      axisTick: {
-        inside: false,  // 刻度线向外，避免与标签冲突
-        length: 0      // 缩短刻度线长度
-      },
-      splitLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.1)' } }
-    },
-    series: [{
-      name: '频谱',
-      type: 'bar',
-      data: generateFrequencyData(),
-      barWidth: '70%',
-      itemStyle: {
-        color: {
-          type: 'linear',
-          x: 0, y: 0, x2: 0, y2: 1,
-          colorStops: [
-            { offset: 0, color: 'rgba(59, 130, 246, 0.85)' },
-            { offset: 1, color: 'rgba(59, 130, 246, 0.45)' }
-          ]
-        }
-      },
-      animation: { duration: 500 }
-    }]
-  };
-  
-  frequencyChartInstance.setOption(option);
-  return frequencyChartInstance;
-};
-
-// 渲染图表
-const renderCharts = async () => {
-  if (isRendering) return;
-  isRendering = true;
-
-  try {
-    await nextTick();
-    if (isTimeDomainActive.value && timeDomainRef.value) {
-      const container = timeDomainRef.value.querySelector('.chart-container');
-      if (container) {
-        initTimeDomainChart();
-        timeChartInstance?.resize();
-      }
-    } else if (frequencyRef.value) {
-      const container = frequencyRef.value.querySelector('.chart-container');
-      if (container) {
-        initFrequencyChart();
-        frequencyChartInstance?.resize();
-      }
+  // -------------------------- 关键修复开始 --------------------------
+  // 4. 实例复用逻辑：先校验管理对象+内部实例的有效性
+  if (!timeDomainChartIns.value) {
+    // 首次创建：修复 target 参数（用 ref 包装 DOM，符合 useBaseChart 预期）
+    timeDomainChartIns.value = useBaseChart({
+      target: ref(container), // ✅ 原错误：{ value: container }，改为 ref(container)（Vue 标准 Ref 对象）
+      getOption: getTimeDomainOption, // 内部函数可直接引用，依赖当前作用域
+      watchSource: () => [isTimeDomainActive.value, props.timeDomain],
+    });
+  } else {
+    // 后续复用：先获取内部 ECharts 实例，校验是否有效（核心修复 null 错误）
+    const chartInstance = timeDomainChartIns.value.getChartInstance();
+    
+    if (!chartInstance) {
+      // 实例已失效（null），重新初始化（兜底逻辑）
+      timeDomainChartIns.value = useBaseChart({
+        target: ref(container),
+        getOption: getTimeDomainOption,
+        watchSource: () => [isTimeDomainActive.value, props.timeDomain],
+      });
+      return timeDomainChartIns.value; // 重新初始化后直接返回
     }
-  } catch (error) {
-    console.error("图表渲染出错:", error);
-  } finally {
-    isRendering = false;
+
+    // 实例有效：安全更新配置和尺寸（加 try/catch 避免极端错误）
+    try {
+      chartInstance.setOption(getTimeDomainOption(), true);
+      chartInstance.resize();
+    } catch (error) {
+      console.error("更新时域图失败，重新初始化：", error);
+      // 更新失败时兜底重新初始化
+      timeDomainChartIns.value = useBaseChart({
+        target: ref(container),
+        getOption: getTimeDomainOption,
+        watchSource: () => [isTimeDomainActive.value, props.timeDomain],
+      });
+    }
+  }
+  // -------------------------- 关键修复结束 --------------------------
+
+  return timeDomainChartIns.value;
+};
+
+// 4. 初始化频谱分析图（使用useBaseChart管理）
+const initFrequencyChart = () => {
+  // 获取图表容器
+  const container = frequencyRef.value?.querySelector('.chart-container');
+  if (!container) return;
+
+  // 应用尺寸约束
+  const constrained = getParentConstrainedSize(container);
+  container.style.width = `${constrained.width}px`;
+  container.style.height = `${constrained.height}px`;
+  // 图表配置生成函数
+  const getFrequencyOption = () => {
+    const fontSize = `clamp(0.55rem, 1.8vw, 0.65rem)`;
+    // 复用工具函数生成网格配置（指定类型）
+    const grid = getGridConfig(container, { type: 'frequency' });
+    
+    const frequency = props.frequency.map(([time, value]) => ({
+      value: [time, value],
+      itemStyle: { color: getAmplitudeColor(value) }
+    }));
+
+    return {
+      backgroundColor: 'transparent',
+      animation: true,
+      animationDuration: 500,
+      // 复用提示框基础配置
+      tooltip: {
+        ...getTooltipBaseConfig(),
+        trigger: 'axis',
+        textStyle: { ...getTooltipBaseConfig().textStyle, fontSize }
+      },
+      grid,
+      // 复用坐标轴基础配置（X轴）
+      xAxis: {
+        ...getAxisBaseConfig('log', { fontSize }),
+        min: 20,
+        max: 20000,
+        axisLabel: {
+          ...getAxisBaseConfig('log', { fontSize }).axisLabel,
+          formatter: (value) => value >= 1000 ? (value/1000).toFixed(1) + 'k' : value.toFixed(0)
+        }
+      },
+      // 复用坐标轴基础配置（Y轴）
+      yAxis: {
+        ...getAxisBaseConfig('value', { fontSize }),
+        axisLabel: {
+          ...getAxisBaseConfig('value', { fontSize }).axisLabel,
+          formatter: (value) => value.toFixed(2),
+          align: 'right',
+          margin: constrained.width < 300 ? 6 : 4
+        },
+        axisTick: { inside: false, length: 0 }
+      },
+      series: [{
+        name: '频谱',
+        type: 'bar',
+        data: frequency,
+        barWidth: '70%',
+        itemStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(59, 130, 246, 0.85)' },
+              { offset: 1, color: 'rgba(59, 130, 246, 0.45)' }
+            ]
+          }
+        },
+        animation: { duration: 500 }
+      }]
+    };
+  };
+
+  // 新增：缓存实例，避免重复创建（核心修改点）
+  if (!frequencyChartIns.value) {
+    // 首次创建：调用 useBaseChart 并缓存实例
+    frequencyChartIns.value = useBaseChart({
+      target: { value: container },
+      getOption: getFrequencyOption,
+      watchSource: () => [!isTimeDomainActive.value,props.frequency],
+    });
+  } else {
+    // 后续复用：仅更新配置和尺寸
+    frequencyChartIns.value.getChartInstance().setOption(getFrequencyOption(), true);
+    frequencyChartIns.value.getChartInstance().resize();
+  }
+
+  return frequencyChartIns.value;
+};
+
+// 修改 renderCharts 函数（核心：判断实例是否存在，避免重复初始化）
+const renderCharts = async () => {
+  await nextTick(); // 确保DOM更新完成（切换图表后容器状态稳定）
+  
+  // 直接调用初始化函数，内部已处理“实例复用”逻辑
+  if (isTimeDomainActive.value) {
+    initTimeDomainChart(); // 内部会判断：实例存在则更新，不存在则创建
+  } else {
+    initFrequencyChart(); // 同上
   }
 };
 
-// 窗口大小变化时调整
-const handleResize = () => {
-  // 先清除再重绘，确保尺寸正确
-  if (timeChartInstance) timeChartInstance.dispose();
-  if (frequencyChartInstance) frequencyChartInstance.dispose();
-  setTimeout(renderCharts, 80);
-};
+// 6. 优化监听逻辑（统一监听状态变化）
+watch(
+  () => isTimeDomainActive.value,
+  () => renderCharts(),
+  { immediate: true }
+);
 
-watch(isTimeDomainActive, () => {
-  setTimeout(renderCharts, 150);
-});
+// 窗口大小变化处理（通过useBaseChart的resize能力）
+const handleResize = () => {
+  renderCharts();
+};
 
 onMounted(() => {
   window.addEventListener('resize', handleResize);
-  const timer = setTimeout(() => {
-    renderCharts();
-    clearTimeout(timer);
-  }, 100);
+  renderCharts(); // 初始化渲染
 });
 
 onUnmounted(() => {
+  // 原有逻辑：移除 resize 事件（不变）
   window.removeEventListener('resize', handleResize);
-  if (timeChartInstance) timeChartInstance.dispose();
-  if (frequencyChartInstance) frequencyChartInstance.dispose();
+  
+  // 新增：销毁缓存的图表实例（核心修改点）
+  if (timeDomainChartIns.value) {
+    timeDomainChartIns.value.destroyChart(); // 调用 useBaseChart 的销毁方法
+    timeDomainChartIns.value = null; // 清空缓存
+  }
+  if (frequencyChartIns.value) {
+    frequencyChartIns.value.destroyChart();
+    frequencyChartIns.value = null;
+  }
 });
 </script>
 
-<style scoped>
-.paper-stack-container {
-  background: transparent;
-  padding: 2%;
-  border-radius: 0.5em;
-  margin: 0;
-  overflow: hidden;
-}
+<style lang="scss" scoped>
 
-.absolute {
-  width: 100%;
-  height: 100%;
-  box-sizing: border-box; /* 确保边框不超出父容器 */
-}
+@use "../styles/chart_keynote.scss" as *;
 
-.active {
-  top: 0;
-  left: 0;
-  z-index: 20;
-  transform: translate(0, 0);
-  opacity: 1;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.inactive {
-  top: 0;
-  left: 0;
-  z-index: 10;
-  transform: translate(2%, 2%);
-  opacity: 0.45;
-  pointer-events: none;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.active:hover::before,
-.inactive::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 0.1em solid rgba(59, 130, 246, 0.5);
-  border-radius: 0.4em;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.25s;
-}
-
-.active:hover::before { opacity: 1; }
-.inactive::before { opacity: 0.7; }
-
-.bg-card-dark { background: #1f2937; }
-.shadow-lg { box-shadow: 0 0.2em 0.8em rgba(0, 0, 0, 0.2); }
-.shadow-xl { box-shadow: 0 0.3em 1.2em rgba(0, 0, 0, 0.25); }
-
-.chart-container {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  box-sizing: border-box;
-}
 </style>

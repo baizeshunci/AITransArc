@@ -28,7 +28,7 @@
             超声信号监测区
           </div>
           <div class="flex-1 p-1">
-            <UltrasonicChartSwitcher class="w-full h-full" />
+            <UltrasonicChartSwitcher :timeDomain="formattedTimeDomainData" :frequency="formattedFrequencyData" class="w-full h-full" />
           </div>
         </div>
 
@@ -117,6 +117,54 @@ const formattedPulseTimeData = computed(() => {
     // 取对应索引的峰值，若不存在则用 0 兜底
     pulse.series[0].data[index] !== undefined ? pulse.series[0].data[index] : 0
   ]);
+});
+
+const formattedTimeDomainData = computed(() => {
+  const timeDomainData = currentData.value?.timeDomain;
+  
+  if (
+    !timeDomainData || 
+    !Array.isArray(timeDomainData.xAxis) || 
+    !timeDomainData.series || 
+    timeDomainData.series.length === 0 || 
+    !Array.isArray(timeDomainData.series[0].data)
+  ) {
+    console.warn('时域波形原始数据格式错误或缺失，返回空数组');
+    return [];
+  }
+
+  const { xAxis: timeStrList } = timeDomainData;
+  const { data: amplitudeList } = timeDomainData.series[0];
+
+  // 关键修正：取 xAxis 和 amplitudeList 中较短的长度，避免索引越界
+  const minLength = Math.min(timeStrList.length, amplitudeList.length);
+  
+  return timeStrList.slice(0, minLength).map((timeStr, index) => [
+    parseFloat(timeStr) || 0, // 确保时间是数字（空值用0兜底）
+    // 修正：从 amplitudeList 的每项中取第二个值（因为你的 amplitudeList 是 [[时间, 振幅], ...] 格式）
+    Array.isArray(amplitudeList[index]) ? amplitudeList[index][1] || 0 : 0
+  ]);
+});
+
+// 父组件：formattedFrequencyData 计算逻辑（与 timeDomain 对齐）
+const formattedFrequencyData = computed(() => {
+  const frequencyData = currentData.value?.frequency;
+  // 防御性校验：确保原始数据结构完整
+  if (!frequencyData || !Array.isArray(frequencyData.xAxis) || !frequencyData.series?.[0]?.data) {
+    return null; // 无数据时返回 null（匹配子组件默认值）
+  }
+
+  const { xAxis: freqList } = frequencyData;
+  const { data: energyList } = frequencyData.series[0];
+  // 取较短长度，避免索引越界
+  const minLength = Math.min(freqList.length, energyList.length);
+
+  return freqList.slice(0, minLength).map((freq, index) => {
+    // 转换为 [频率（数字）, 能量（数字）]
+    const frequency = parseFloat(freq) || 0; // 字符串频率转数字
+    const energy = Array.isArray(energyList[index]) ? energyList[index][1] || 0 : 0; // 取能量值
+    return [frequency, energy];
+  });
 });
 
 // 切换函数只需更新选中状态即可

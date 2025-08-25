@@ -130,8 +130,6 @@ useBaseChart({
                     symbol: 'none',
                     lineStyle: { type: 'dashed', width: 1.5 },
                     data: [
-                        { yAxis: 30, name: '高温阈值', lineStyle: { color: '#ff4d4f' } },
-                        { yAxis: 10, name: '低温阈值', lineStyle: { color: '#1890ff' } },
                         { type: 'average', name: '平均温度', lineStyle: { color: '#52c41a' } }
                     ]
                 }

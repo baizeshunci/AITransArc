@@ -60,6 +60,15 @@
 import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
 import * as echarts from "echarts";
 import { useBaseChart } from "./utils_js/base-chart";
+// 1. 引入复用的工具函数
+import { 
+  getGridConfig, 
+  getAxisBaseConfig, 
+  getTooltipBaseConfig,
+  getXAxisLabelFormatter,
+  getYAxisLabelFormatter
+} from "./utils_js/chart_utils"; // 假设工具函数放在此路径
+
 
 
 // 1. 定义接收的外部数据 props
@@ -127,29 +136,13 @@ const getColorByValue = (value) => {
   return legendData[2].color;
 };
 
-// 动态网格配置（保持不变）
-const getGridConfig = (container) => {
-  if (!container) return {
-    left: '5%', right: '5%', bottom: '15%', top: '22%', containLabel: true
-  };
-
-  const { offsetWidth: width, offsetHeight: height } = container;
-  return {
-    left: width < 300 ? '7%' : '5%',
-    right: width < 300 ? '7%' : '5%',
-    bottom: height < 200 ? '18%' : '15%',
-    top: height < 200 ? '10%' : '7%',
-    containLabel: true
-  };
-};
-
 // 初始化脉冲时间-峰值柱状图（使用 props 数据）
 const initPulseTimeChart = () => {
   
   const container = pulseTimeContainer.value;
 
   const getPulseTimeOption = () => {
-    const grid = getGridConfig(container);
+    const grid = getGridConfig(container, { type: 'pulse-time' });
     const fontSize = `clamp(0.55rem, 1.8vw, 0.65rem)`;
     // 使用外部传入的 pulseTimeData
     const styledData = props.pulseTimeData.map(([time, value]) => ({
@@ -162,38 +155,26 @@ const initPulseTimeChart = () => {
       animation: true,
       animationDuration: 300,
       tooltip: {
+        ...getTooltipBaseConfig(),
         trigger: 'axis',
-        backgroundColor: 'rgba(17, 24, 39, 0.9)',
-        borderColor: 'rgba(59, 130, 246, 0.3)',
-        borderWidth: 1,
-        textStyle: { color: '#e5e7eb', fontSize }
+        textStyle: { ...getTooltipBaseConfig().textStyle, fontSize }
       },
       grid,
       xAxis: {
-        type: 'value',
-        name: '',
-        nameTextStyle: { color: 'rgba(209, 213, 219, 0.7)', fontSize },
-        axisLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.3)' } },
-        axisLabel: { 
-          color: 'rgba(209, 213, 219, 0.7)',
-          fontSize,
+        ...getAxisBaseConfig('value', { fontSize }),
+        axisLabel: {
+          ...getAxisBaseConfig('value', { fontSize }).axisLabel,
           formatter: (val) => val.toFixed(1)
-        },
-        splitLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.1)' } }
+        }
       },
       yAxis: {
-        type: 'value',
-        name: '',
-        nameTextStyle: { color: 'rgba(209, 213, 219, 0.7)', fontSize },
-        axisLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.3)' } },
-        axisLabel: { 
-          color: 'rgba(209, 213, 219, 0.7)',
-          fontSize,
-          formatter: (val) => val.toFixed(0)
-        },
-        splitLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.1)' } },
+        ...getAxisBaseConfig('value', { fontSize }),
         min: 0,
-        max: 100
+        max: 100,
+        axisLabel: {
+          ...getAxisBaseConfig('value', { fontSize }).axisLabel,
+          formatter: (val) => val.toFixed(0)
+        }
       },
       series: [{
         name: '脉冲峰值',
@@ -216,25 +197,8 @@ const initPulseTimeChart = () => {
 
 // 初始化脉冲峰值区间频率图（使用 props 数据或计算数据）
 const initPulseFreqChart = () => {
-  if (!pulseFreqContainer.value) {
-    console.warn("脉冲频率图容器未找到");
-    return;
-  }
   
   const container = pulseFreqContainer.value;
-
-  if (pulseFreqChart) {
-    pulseFreqChart.dispose();
-    pulseFreqChart = null;
-  }
-
-  try {
-    pulseFreqChart = echarts.init(container);
-  } catch (error) {
-    console.error("脉冲频率图初始化失败：", error);
-    pulseFreqChart = null;
-    return;
-  }
 
   const getPulseFreqOption = () => {
     const grid = getGridConfig(container);
@@ -247,35 +211,37 @@ const initPulseFreqChart = () => {
       animation: true,
       animationDuration: 300,
       tooltip: {
+        ...getTooltipBaseConfig(),
         trigger: 'item',
-        backgroundColor: 'rgba(17, 24, 39, 0.9)',
-        borderColor: 'rgba(59, 130, 246, 0.3)',
-        borderWidth: 1,
-        textStyle: { color: '#e5e7eb', fontSize }
+        textStyle: { ...getTooltipBaseConfig().textStyle, fontSize }
       },
       grid,
       xAxis: {
-        type: 'category',
+        ...getAxisBaseConfig('category', { fontSize }),
         data: freqData.map(item => item.name),
-        axisLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.3)' } },
-        axisLabel: { 
-          color: 'rgba(209, 213, 219, 0.7)',
-          fontSize,
-          rotate: container.offsetWidth < 280 ? 30 : 0
-        },
-        splitLine: { show: false }
+        axisLabel: {
+          ...getAxisBaseConfig('category', { fontSize }).axisLabel,
+          rotate: container.offsetWidth < 280 ? 30 : 0,
+          // 复用X轴标签格式化工具
+          formatter: getXAxisLabelFormatter({
+            intervalPixel: 40,
+            target: pulseFreqContainer,
+            data: freqData
+          })
+        }
       },
       yAxis: {
-        type: 'value',
-        name: '',
-        nameTextStyle: { color: 'rgba(209, 213, 219, 0.7)', fontSize },
-        axisLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.3)' } },
-        axisLabel: { 
-          color: 'rgba(209, 213, 219, 0.7)',
-          fontSize
-        },
-        splitLine: { lineStyle: { color: 'rgba(209, 213, 219, 0.1)' } },
-        min: 0
+        ...getAxisBaseConfig('value', { fontSize }),
+        min: 0,
+        axisLabel: {
+          ...getAxisBaseConfig('value', { fontSize }).axisLabel,
+          // 复用Y轴标签格式化工具
+          formatter: getYAxisLabelFormatter({
+            intervalPixel: 25,
+            target: pulseFreqContainer,
+            splitNumber: 5
+          })
+        }
       },
       series: [{
         name: '',
@@ -290,12 +256,10 @@ const initPulseFreqChart = () => {
     };
   };
 
-  pulseFreqChart.setOption(getPulseFreqOption());
-
-  useBaseChart({
+  return useBaseChart({
     target: pulseFreqContainer,
     getOption: getPulseFreqOption,
-    watchSource: () => !isPulseTimeActive.value
+    watchSource: () => [isPulseTimeActive.value, props.pulseFreqData, props.pulseTimeData]
   });
 
 };
@@ -310,10 +274,11 @@ const renderCharts = async () => {
   }
 };
 
-// 监听状态变化和 props 数据变化
-watch(isPulseTimeActive, renderCharts, { immediate: true });
-// 当外部传入的数据变化时，重新渲染图表
-watch(() => [props.pulseTimeData, props.pulseFreqData], renderCharts, { deep: true });
+watch([
+  () => isPulseTimeActive.value,
+  () => props.pulseTimeData,
+  () => props.pulseFreqData
+], renderCharts, { immediate: true, deep: true });
 
 onUnmounted(() => {
   if (pulseTimeChart) pulseTimeChart.dispose();

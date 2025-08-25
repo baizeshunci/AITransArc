@@ -92,6 +92,7 @@ export function useBaseChart(options) {
 
     // 渲染图表（核心方法）
     const renderChart = async () => {
+        
         if (isRendering || !target.value) return;
         isRendering = true;
 
